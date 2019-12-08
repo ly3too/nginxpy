@@ -21,6 +21,8 @@ cdef extern from "ngx_core.h":
     ctypedef int ngx_err_t
     ctypedef int ngx_msec_t
 
+    ctypedef unsigned char u_char
+
     ctypedef struct ngx_str_t:
         size_t len
         char *data
@@ -44,6 +46,20 @@ cdef extern from "ngx_core.h":
                        ngx_log_t *log,
                        ngx_err_t err,
                        const char *fmt)
+
+    ctypedef struct ngx_list_part_t:
+        void *elts
+        ngx_uint_t nelts
+        ngx_list_part_t *next
+
+    ctypedef struct ngx_list_t:
+        ngx_list_part_t part
+
+    ctypedef struct ngx_table_elt_t:
+        ngx_uint_t hash
+        ngx_str_t key
+        ngx_str_t value
+        u_char *lowcase_key
 
 
 cdef inline str from_nginx_str(ngx_str_t str):

@@ -5,6 +5,9 @@ cdef extern from "ngx_http.h":
     ctypedef struct ngx_connection_t:
         ngx_log_t *log
 
+    ctypedef struct ngx_http_headers_in_t:
+        ngx_list_t headers
+
     ctypedef struct ngx_http_request_t:
         ngx_connection_t *connection
         ngx_str_t request_line
@@ -14,9 +17,15 @@ cdef extern from "ngx_http.h":
         ngx_str_t unparsed_uri
         ngx_str_t method_name
         ngx_str_t http_protocol
+        ngx_http_headers_in_t headers_in
+        unsigned short http_major
+        unsigned short http_minor
 
     void ngx_http_core_run_phases(ngx_http_request_t *request)
     void *ngx_http_get_module_ctx(ngx_http_request_t *request,
                                   ngx_module_t module)
     void ngx_http_set_ctx(ngx_http_request_t *request, void *ctx,
                           ngx_module_t module)
+    
+    void *ngx_http_get_module_loc_conf(ngx_http_request_t *r, 
+        ngx_module_t module)

@@ -4,7 +4,7 @@ from .nginx_core cimport ngx_cycle_t, ngx_calloc, ngx_free
 from .nginx_event cimport ngx_event_t, ngx_post_event, ngx_add_timer
 from .nginx_event cimport ngx_posted_events
 
-import contextvars
+# import contextvars
 import logging
 import time
 import traceback
@@ -28,8 +28,8 @@ cdef class Event:
         self.event.handler = self._run
         self._callback = callback
         self._args = args
-        if context is None:
-            context = contextvars.copy_context()
+        #if context is None:
+        #    context = contextvars.copy_context()
         self._context = context
 
     def __dealloc__(self):
@@ -40,7 +40,8 @@ cdef class Event:
     cdef void _run(ngx_event_t *ev):
         cdef Event self = <Event> ev.data
         try:
-            self._context.run(self._callback, *self._args)
+            #self._context.run(self._callback, *self._args)
+            self._callback(*self._args)
         except Exception as exc:
             traceback.print_exc()
         finally:
@@ -97,3 +98,5 @@ class NginxEventLoopPolicy(AbstractEventLoopPolicy):
 
     def new_event_loop(self):
         return self._loop
+
+    

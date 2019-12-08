@@ -12,6 +12,9 @@ from .nginx_core cimport ngx_log_error
 
 cdef extern from "ngx_python_module.h":
     ngx_module_t ngx_python_module
+    ctypedef struct ngx_http_python_loc_conf_t:
+        int is_wsgi
+        ngx_str_t asgi_pass
 
 
 class ReturnCode(IntEnum):
@@ -65,3 +68,4 @@ include "log.pyx"
 include "cycle.pyx"
 include "http/http.pyx"
 include "asyncio/loop.pyx"
+include "asyncio/asgi.pyx"
