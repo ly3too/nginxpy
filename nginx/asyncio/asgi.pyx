@@ -16,12 +16,13 @@ cdef get_headers(ngx_http_request_t *r):
     """
     cdef ngx_list_part_t *part = &(r.headers_in.headers.part)
     cdef ngx_uint_t i
+    cdef ngx_table_elt_t *h = <ngx_table_elt_t *>part.elts
 
     headers = list()
     while part:
         for i in range(part.nelts):
-            key = from_nginx_str((<ngx_str_t *>(part.elts[i])).key)
-            val = from_nginx_str((<ngx_str_t *>(part.elts[i])).value)
+            key = from_nginx_str(h[i].key)
+            val = from_nginx_str(h[i].value)
             headers.append([key, val])
 
         part = part.next
@@ -65,7 +66,7 @@ cdef void request_read_post_handler(ngx_http_request_t *request):
 cdef ngx_str_t ngx_str_from_bytes(ngx_pool_t *pool, val):
     cdef ngx_str_t ngx_str
     cdef size_t val_len = len(val)
-    ngx_str.data = <char *>ngx_palloc(pool, val_len)
+    ngx_str.data = <u_char *>ngx_palloc(pool, val_len)
     if ngx_str.data == NULL:
         raise RuntimeError('bad alloc')
     ngx_memcpy(ngx_str.data, <char *>val, val_len)
@@ -104,7 +105,7 @@ cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
     cdef ngx_chain_t out
     out.buf = buf 
     out.next = NULL
-    if ngx_http_output_filter(r, <ngx_chain_t *>out) != NGX_OK:
+    if ngx_http_output_filter(r, &out) != NGX_OK:
         raise RuntimeError('failed to send body')
 
 

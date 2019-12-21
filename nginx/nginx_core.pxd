@@ -25,7 +25,7 @@ cdef extern from "ngx_core.h":
 
     ctypedef struct ngx_str_t:
         size_t len
-        char *data
+        u_char *data
 
     ctypedef struct ngx_module_t:
         pass

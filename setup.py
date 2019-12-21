@@ -166,11 +166,12 @@ nginxpy = Extension(
         'nginx/log.pyx',
         'nginx/asyncio/loop.pyx',
         'nginx/http/http.pyx',
+        'nginx/asyncio/asgi.pyx'
     ])
 
 setup(
-    author="DecentFoX Studio",
-    author_email='foss@decentfox.com',
+    author="ly3too",
+    author_email='ly3too@qq.com',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
