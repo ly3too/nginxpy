@@ -2,6 +2,7 @@ from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf
 from .utils import import_by_path
 import os
 
+
 cdef get_headers(ngx_http_request_t *r):
 """
 get headers from ngx request
@@ -35,16 +36,23 @@ get the app from location config
     
     return app
 
-cdef request_read_post_handler(ngx_http_request_t *request):
+cdef void request_read_post_handler(ngx_http_request_t *request):
 """
 read client body and set the in buffer NgxAsgiCtx
 """
-    cdef NgxAsgiCtx ctx = NgxAsgiCtx.get_or_set_asgi_ctx(request)
+    try:
+        cdef NgxAsgiCtx ctx = NgxAsgiCtx.get_or_set_asgi_ctx(request)
+    except:
+        ngx_log_error(NGX_LOG_CRIT, request.connection.log, 0,
+                      b'Error occured in post_read:\n' +
+                      traceback.format_exc().encode())
 
     if request.request_body == NULL:
+        ngx_http_finalize_request(request, NGX_HTTP_INTERNAL_SERVER_ERROR)
         return
 
     ctx.in_chain = request.request_body.bufs
+    ctx.start_app()
 
 cdef ngx_str_from_bytes(ngx_pool_t *pool, val):
     cdef ngx_str_t ngx_str
@@ -90,6 +98,8 @@ cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
     if ngx_http_output_filter(r, <ngx_chain_t *>out) != NGX_OK:
         raise RuntimeError('failed to send body')
 
+class AsgiFuture(Future):
+
 
 cdef class NgxAsgiCtx:
     cdef public ngx_http_request_t *request
@@ -113,6 +123,11 @@ cdef class NgxAsgiCtx:
         if self.app is None:
             raise RuntimeError("failed to create app")
         self.file_off = -1
+
+    cdef start_app(self):
+        self.app_coro = self.app(self.scope, self.receive, self.send)
+        loop = asyncio.get_event_loop()
+        loop._run_coro(self.app_coro) 
 
     async def receive(self):
         if self.closed or self.response_started:
@@ -177,6 +192,7 @@ cdef class NgxAsgiCtx:
             # Handle response completion
             if not more_body:
                 self.response_complete = True
+                
 
         else:
             # Response already sent
@@ -198,11 +214,19 @@ cdef class NgxAsgiCtx:
 
 cdef public ngx_int_t ngx_http_python_asgi_handler(ngx_http_request_t *r):
     # create scope
-    asgi_ctx =  NgxAsgiCtx.get_or_set_asgi_ctx(r)
+    try:
+        asgi_ctx =  NgxAsgiCtx.get_or_set_asgi_ctx(r)
+    except:
+        ngx_log_error(NGX_LOG_CRIT, request.connection.log, 0,
+                      b'Error occured in post_read:\n' +
+                      traceback.format_exc().encode())
+        return NGX_HTTP_INTERNAL_SERVER_ERROR
 
-    # create app
-    
 
-    # put app into loop's task queue
+    # receive content and start app
+    cdef ngx_int_t rc = ngx_http_read_client_request_body(r, 
+        request_read_post_handler)
+    if rc == NGX_ERROR or rc >= NGX_HTTP_SPECIAL_RESPONSE:
+        return rc
 
-    # return ngx_done
+    return NGX_DONE

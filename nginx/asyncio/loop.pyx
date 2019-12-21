@@ -20,7 +20,7 @@ cdef class Event:
         object _args
         object _context
 
-    def __cinit__(self, callback, args, context):
+    def __cinit__(self, loop, callback, args, context, coro = None):
         self.event = <ngx_event_t *> ngx_calloc(sizeof(ngx_event_t),
                                                 current_cycle.log.log)
         self.event.log = current_cycle.log.log
@@ -31,6 +31,9 @@ cdef class Event:
         #if context is None:
         #    context = contextvars.copy_context()
         self._context = context
+        self._cancled = False
+        self._post_callback = None
+        self._post_args = None
 
     def __dealloc__(self):
         ngx_free(self.event)
@@ -41,15 +44,18 @@ cdef class Event:
         cdef Event self = <Event> ev.data
         try:
             #self._context.run(self._callback, *self._args)
-            self._callback(*self._args)
+            if not self._cancled:
+                self._callback(*self._args)
         except Exception as exc:
             traceback.print_exc()
         finally:
+            # wakeup coroutine suspend for this event
+            if self._post_callback:
+                self._post_callback(*self._post_args)
             Py_DECREF(self)
 
     def cancel(self):
-        # TODO: XXX
-        pass
+        self._cancled = True
 
     cdef call_later(self, float delay):
         ngx_add_timer(self.event, int(delay * 1000))
@@ -61,8 +67,13 @@ cdef class Event:
         Py_INCREF(self)
         return self
 
+    cdef add_post_callback(self, callback, args):
+        self._post_callback = callback
+        self._post_args = args
+
 
 cdef class NginxEventLoop:
+    _current_coro = None
     def create_task(self, coro):
         return Task(coro, loop=self)
 
@@ -73,17 +84,51 @@ cdef class NginxEventLoop:
         return time.monotonic()
 
     def call_later(self, delay, callback, *args, context=None):
-        return Event(callback, args, context).call_later(delay)
+        return Event(callback, args, context)\
+            .add_post_callback(self._run_coro, self._current_coro)\
+            .call_later(delay)
 
     def call_at(self, when, callback, *args, context=None):
         return self.call_later(when - self.time(), callback, *args,
                                context=context)
 
     def call_soon(self, callback, *args, context=None):
-        return Event(callback, args, context).post()
+        return Event(callback, args, context)\
+            .add_post_callback(self._run_coro, self._current_coro).post()
 
     def get_debug(self):
         return False
+
+    def set_exception_handler(self, handler):
+        self._exception_handler = handler
+
+    def call_exception_handler(self, context):
+        if self._exception_handler:
+            self._exception_handler(context)
+
+    def _run_coro(coro):
+    """
+    schedule a top coroutine
+    """
+        if coro is None:
+            return
+        try:
+            self._current_coro = coro
+            coro.send(None)
+        except StopIteration as e:
+            context = {
+                "message": "",
+                "exception": e
+            }
+            self.call_exception_handler(context)
+        except Exception as e:
+            context = {
+                "message": "exception raised from coroutine",
+                "exception": e
+            }
+            self.call_exception_handler(context)
+        finally:
+            self._current_coro = None
 
 
 class NginxEventLoopPolicy(AbstractEventLoopPolicy):
