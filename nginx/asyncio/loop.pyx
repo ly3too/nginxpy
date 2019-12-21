@@ -106,10 +106,10 @@ cdef class NginxEventLoop:
         if self._exception_handler:
             self._exception_handler(context)
 
-    def _run_coro(coro):
-    """
-    schedule a top coroutine
-    """
+    def _run_coro(self, coro):
+        """
+        schedule a top coroutine
+        """
         if coro is None:
             return
         try:

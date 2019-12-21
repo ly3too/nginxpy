@@ -1,20 +1,27 @@
-from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf
+from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf,\
+    ngx_http_finalize_request, NGX_HTTP_INTERNAL_SERVER_ERROR,\
+    ngx_http_send_header, ngx_http_output_filter,\
+    ngx_http_read_client_request_body, NGX_HTTP_SPECIAL_RESPONSE
+from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
+    ngx_buf_t, ngx_palloc, ngx_memcpy, ngx_list_push, ngx_create_temp_buf,\
+    ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t
+from cpython.bytes cimport PyBytes_FromStringAndSize
 from .utils import import_by_path
 import os
-
+import asyncio
 
 cdef get_headers(ngx_http_request_t *r):
-"""
-get headers from ngx request
-"""
+    """
+    get headers from ngx request
+    """
     cdef ngx_list_part_t *part = &(r.headers_in.headers.part)
-    cdef int i
+    cdef ngx_uint_t i
 
     headers = list()
     while part:
         for i in range(part.nelts):
-            key = from_nginx_str(part.elts[i].key)
-            val = from_nginx_str(part.elts[i].value)
+            key = from_nginx_str((<ngx_str_t *>(part.elts[i])).key)
+            val = from_nginx_str((<ngx_str_t *>(part.elts[i])).value)
             headers.append([key, val])
 
         part = part.next
@@ -22,26 +29,27 @@ get headers from ngx request
     return headers
 
 cdef get_loc_app(ngx_http_request_t *r):
-"""
-get the app from location config
-"""
-    ngx_http_python_loc_conf_t *plcf = 
+    """
+    get the app from location config
+    """
+    cdef ngx_http_python_loc_conf_t *plcf = \
         <ngx_http_python_loc_conf_t *>ngx_http_get_module_loc_conf(r, ngx_python_module)
     app_str = from_nginx_str(plcf.asgi_pass).decode("utf-8")
     app = import_by_path(app_str)
 
-    if is_wsgi:
+    if plcf.is_wsgi:
         # todo: wsgi to asgi adapter
         return None
     
     return app
 
 cdef void request_read_post_handler(ngx_http_request_t *request):
-"""
-read client body and set the in buffer NgxAsgiCtx
-"""
+    """
+    read client body and set the in buffer NgxAsgiCtx
+    """
+    cdef NgxAsgiCtx ctx
     try:
-        cdef NgxAsgiCtx ctx = NgxAsgiCtx.get_or_set_asgi_ctx(request)
+        ctx = NgxAsgiCtx.get_or_set_asgi_ctx(request)
     except:
         ngx_log_error(NGX_LOG_CRIT, request.connection.log, 0,
                       b'Error occured in post_read:\n' +
@@ -54,10 +62,10 @@ read client body and set the in buffer NgxAsgiCtx
     ctx.in_chain = request.request_body.bufs
     ctx.start_app()
 
-cdef ngx_str_from_bytes(ngx_pool_t *pool, val):
+cdef ngx_str_t ngx_str_from_bytes(ngx_pool_t *pool, val):
     cdef ngx_str_t ngx_str
     cdef size_t val_len = len(val)
-    ngx_str.data = ngx_palloc(pool, val_len)
+    ngx_str.data = <char *>ngx_palloc(pool, val_len)
     if ngx_str.data == NULL:
         raise RuntimeError('bad alloc')
     ngx_memcpy(ngx_str.data, <char *>val, val_len)
@@ -65,29 +73,30 @@ cdef ngx_str_from_bytes(ngx_pool_t *pool, val):
     return ngx_str
 
 cdef int request_send_headers(ngx_http_request_t *r, headers, status):
+    cdef ngx_table_elt_t *h
     r.headers_out.status = int(status)
     for key, val  in headers:
         key = bytes(key)
         val = bytes(val)
         if key.lower() == b'content-type':
-            r.headers_out.content_type = ngx_str_from_bytes(val)
+            r.headers_out.content_type = ngx_str_from_bytes(r.pool, val)
             continue
 
-        cdef ngx_table_elt_t *h = ngx_list_push(r.headers_out.headers)
+        h = <ngx_table_elt_t *>ngx_list_push(&r.headers_out.headers)
         if h == NULL:
             raise RuntimeError("bad alloc")
         h.hash = 1
-        h.key = <ngx_str_t>ngx_str_from_bytes(key)
-        h.val = <ngx_str_t>ngx_str_from_bytes(val)
+        h.key = <ngx_str_t>ngx_str_from_bytes(r.pool, key)
+        h.value = <ngx_str_t>ngx_str_from_bytes(r.pool, val)
     
     return ngx_http_send_header(r)
 
 cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
     cdef size_t body_len = len(body)
-    ngx_buf_t *buf = ngx_create_temp_buf(r.pool, body_len)
+    cdef ngx_buf_t *buf = ngx_create_temp_buf(r.pool, body_len)
     if buf == NULL:
         raise RuntimeError('bad alloc')
-    buf.last = ngx_cpy(buf.last, <char *>body, body_len)
+    buf.last = <u_char *>ngx_cpymem(buf.last, <char *>body, body_len)
     buf.last_buf = not more_body
     buf.last_in_chain = 1
     buf.memory = 1
@@ -98,18 +107,20 @@ cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
     if ngx_http_output_filter(r, <ngx_chain_t *>out) != NGX_OK:
         raise RuntimeError('failed to send body')
 
-class AsgiFuture(Future):
-
 
 cdef class NgxAsgiCtx:
-    cdef public ngx_http_request_t *request
-    cdef public ngx_chain_t *in_chain = NULL
-    cdef public bool closed = False
-    cdef public bool response_started = False
-    cdef public bool respense_complete = False
-    cdef public ssize_t file_off = -1
-    def __cinit__(self, ngx_http_request_t *request):
-        self.request = request
+    cdef ngx_http_request_t *request
+    cdef ngx_chain_t *in_chain
+    cdef ssize_t file_off
+    def __cinit__(self):
+        self.in_chain = NULL
+        self.closed = False
+        self.response_started = False
+        self.response_complete = False
+        self.request = NULL
+        self.file_off = -1
+
+    cdef init(self, ngx_http_request_t *request):
         self.scope = {
             "type": "http",
             "http_version": "{}.{}".format(request.http_major, request.http_minor),
@@ -130,6 +141,7 @@ cdef class NgxAsgiCtx:
         loop._run_coro(self.app_coro) 
 
     async def receive(self):
+        cdef ngx_buf_t *buf
         if self.closed or self.response_started:
             return {"type": "http.disconnect"}
         
@@ -138,14 +150,14 @@ cdef class NgxAsgiCtx:
             return data
         
         if self.in_chain.buf and self.in_chain.buf:
-            cdef ngx_buf_t *buf = self.in_chain.buf
+            buf = self.in_chain.buf
             body = ""
             if ngx_buf_in_memory(buf):
                 body = PyBytes_FromStringAndSize(<char*>buf.pos,
                         buf.last - buf.pos).decode('iso-8859-1')
                 self.in_chain = self.in_chain.next
                 self.file_off = -1
-            elif buf.in_file && buf.in_file not is NULL:
+            elif buf.in_file:
                 if self.file_off < 0:
                     self.file_off = buf.file_pos
                 fd = buf.file.fd
@@ -185,8 +197,8 @@ cdef class NgxAsgiCtx:
                 msg = "Expected ASGI message 'http.response.body', but got '%s'."
                 raise RuntimeError(msg % message_type)
 
-            body = message.get("body", b"")
-            more_body = message.get("more_body", False)
+            body = data.get("body", b"")
+            more_body = data.get("more_body", False)
             ngx_send_body(self.request, body, more_body)
 
             # Handle response completion
@@ -206,7 +218,8 @@ cdef class NgxAsgiCtx:
         cdef NgxAsgiCtx new_asgi
         ctx = ngx_http_get_module_ctx(r, ngx_python_module)
         if ctx == NULL:
-            new_asgi = NgxAsgiCtx(r)
+            new_asgi = NgxAsgiCtx.__new__(NgxAsgiCtx)
+            new_asgi.init(r)
             ngx_http_set_ctx(r, <void *>new_asgi, ngx_python_module)
         else:
             new_asgi = <object>ctx
@@ -217,7 +230,7 @@ cdef public ngx_int_t ngx_http_python_asgi_handler(ngx_http_request_t *r):
     try:
         asgi_ctx =  NgxAsgiCtx.get_or_set_asgi_ctx(r)
     except:
-        ngx_log_error(NGX_LOG_CRIT, request.connection.log, 0,
+        ngx_log_error(NGX_LOG_CRIT, r.connection.log, 0,
                       b'Error occured in post_read:\n' +
                       traceback.format_exc().encode())
         return NGX_HTTP_INTERNAL_SERVER_ERROR

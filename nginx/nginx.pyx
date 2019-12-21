@@ -8,6 +8,7 @@ from .nginx_core cimport ngx_module_t, ngx_cycle_t
 from .nginx_core cimport NGX_OK, NGX_ERROR, NGX_DECLINED, NGX_AGAIN
 from .nginx_core cimport NGX_LOG_DEBUG, NGX_LOG_CRIT
 from .nginx_core cimport ngx_log_error
+from .nginx_core cimport ngx_chain_t, ngx_str_t
 
 
 cdef extern from "ngx_python_module.h":

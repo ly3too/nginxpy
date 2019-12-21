@@ -10,7 +10,6 @@
 static ngx_int_t ngx_python_init_process(ngx_cycle_t *cycle);
 static void ngx_python_exit_process(ngx_cycle_t *cycle);
 static ngx_int_t ngx_python_postconfiguration(ngx_conf_t *cf);
-
 static wchar_t *python_exec = NULL;
 
 
@@ -18,6 +17,7 @@ static void *ngx_http_python_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_wsgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_python_path(ngx_conf_t *cf, ngx_command_t *cmd, 
     void *conf);
+static char *python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 typedef struct {
     ngx_str_t python_path;
@@ -33,10 +33,10 @@ static ngx_command_t  ngx_python_commands[] = {
     },
     { ngx_string("wsgi_pass"),
         NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
-        ngx_conf_set_str_slot,
+        ngx_http_wsgi_pass,
         NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_wsgi_pass_conf_t, wsgi_pass),
-        &ngx_wsgi_pass_post,
+        0,
+        NULL,
     },
     { ngx_string("asgi_pass"),
         NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
@@ -123,7 +123,7 @@ static ngx_int_t
 ngx_python_postconfiguration(ngx_conf_t *cf) {
     ngx_http_handler_pt        *h;
     ngx_http_core_main_conf_t  *cmcf;
-    ngx_http_python_main_conf_t *lmcf;
+    ngx_http_python_main_conf_t *pmcf;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
@@ -136,7 +136,8 @@ ngx_python_postconfiguration(ngx_conf_t *cf) {
     // set python path
     pmcf = ngx_http_conf_get_module_main_conf(cf, ngx_python_module);
     if (pmcf && pmcf->python_path.len) {
-        wchar_t *python_path = Py_DecodeLocale(pmcf->python_path.data, NULL);
+        wchar_t *python_path = Py_DecodeLocale((char *)pmcf->python_path.data, 
+            NULL);
         Py_SetPath(python_path);
         ngx_log_error(NGX_LOG_NOTICE, cf->cycle->log, 0,
                   "set python path to: %s", python_path);
@@ -186,13 +187,13 @@ python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_core_loc_conf_t *clcf;
     ngx_str_t *value;
 
-    if (plcf->asgi_path.len != 0) {
+    if (plcf->asgi_pass.len != 0) {
         return "is duplicate";
     }
 
     value = cf->args->elts;
-    plcf->python_path.len = value[1].len;
-    plcf->python_path.data = value[1].data;
+    plcf->asgi_pass.len = value[1].len;
+    plcf->asgi_pass.data = value[1].data;
     dd("add asgi app: %s", value[1].data);
 
     /*  register location content handler */
@@ -212,5 +213,5 @@ ngx_http_wsgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_python_loc_conf_t *plcf = conf;
     plcf->is_wsgi = 1;
 
-    return python_asgi_pass;
+    return python_asgi_pass(cf, cmd, conf);
 }
