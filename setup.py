@@ -71,7 +71,7 @@ class nginxpy_build(build):
             if os.path.exists(nginx_tarball):
                 print('reusing', nginx_tarball)
             else:
-                print('downloading', nginx_url)
+                print('downloading {} to: {}'.format(nginx_url, nginx_tarball))
                 urlretrieve(nginx_url, nginx_tarball)
             print('extracting tarball')
             subprocess.check_call(['tar', 'xvf', nginx_tarball,
@@ -166,11 +166,12 @@ nginxpy = Extension(
         'nginx/log.pyx',
         'nginx/asyncio/loop.pyx',
         'nginx/http/http.pyx',
+        'nginx/asyncio/asgi.pyx'
     ])
 
 setup(
-    author="DecentFoX Studio",
-    author_email='foss@decentfox.com',
+    author="ly3too",
+    author_email='ly3too@qq.com',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',

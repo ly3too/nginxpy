@@ -13,6 +13,8 @@ try:
         NginxEventLoop, NginxEventLoopPolicy, Event,
     )
 except ImportError:
+    import traceback
+    traceback.print_exc()   # todo: print to nginx error log depending on running env
     import sys
     from os.path import abspath, dirname
     from importlib.util import find_spec
