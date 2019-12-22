@@ -16,6 +16,7 @@ cdef extern from "ngx_python_module.h":
     ctypedef struct ngx_http_python_loc_conf_t:
         int is_wsgi
         ngx_str_t asgi_pass
+        int version
 
 
 class ReturnCode(IntEnum):

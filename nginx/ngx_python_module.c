@@ -39,7 +39,7 @@ static ngx_command_t  ngx_python_commands[] = {
         NULL,
     },
     { ngx_string("asgi_pass"),
-        NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE1,
+        NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_HTTP_LMT_CONF|NGX_CONF_TAKE12,
         python_asgi_pass,
         NGX_HTTP_LOC_CONF_OFFSET,
         0,
@@ -121,12 +121,11 @@ ngx_python_exit_process(ngx_cycle_t *cycle) {
 
 static ngx_int_t
 ngx_python_postconfiguration(ngx_conf_t *cf) {
-    ngx_http_handler_pt        *h;
+    // ngx_http_handler_pt        *h;
     // ngx_http_core_main_conf_t  *cmcf;
     ngx_http_python_main_conf_t *pmcf;
 
-    // this seems kill the performance, so removed here, planing to support
-    // this functionality by explicit configuration
+    // removed here, planing to support this functionality by explicit configuration
     // cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     // h = ngx_array_push(&cmcf->phases[NGX_HTTP_POST_READ_PHASE].handlers);
     // if (h == NULL) {
@@ -211,6 +210,10 @@ python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     plcf->asgi_pass.data = value[1].data;
     ngx_log_error(NGX_LOG_DEBUG, cf->cycle->log, 0,
         "add asgi app: %s", value[1].data);
+
+    if (cf->args->nelts >= 3) {
+        plcf->version = ngx_atoi(value[2].data, value[2].len);
+    }
 
     /*  register location content handler */
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);

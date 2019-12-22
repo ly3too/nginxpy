@@ -10,3 +10,11 @@ def import_by_path(path):
     for bit in object_path.split("."):
         target = getattr(target, bit)
     return target
+
+class Asgi2ToAsgi3:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        instance = self.app(scope)
+        await instance(receive, send)
