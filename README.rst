@@ -65,9 +65,9 @@ By example configuration:
 
     http {
         # python_path specifies pathes to search from (PYTHONPATH), before python initinallization. 
-        
+
         # if not specified, the default PYTHONPATH is used
-        
+
         python_path "/usr/lib/python3.6:/usr/lib/python3.6/lib-dynload";
 
         server {
