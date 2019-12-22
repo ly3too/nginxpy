@@ -63,11 +63,11 @@ Usage
 -----------
 By example configuration:
 
+.. code-block:: bash
+
     http {
         # python_path specifies pathes to search from (PYTHONPATH), before python initinallization. 
-
         # if not specified, the default PYTHONPATH is used
-
         python_path "/usr/lib/python3.6:/usr/lib/python3.6/lib-dynload";
 
         server {
@@ -75,17 +75,13 @@ By example configuration:
             listen 80;
             
             location / {
-            
-                # same as openresty's content_by_xx. handle request by asgi app
-                
+                # same as openresty's content_by_xx. handle request by asgi app      
                 asgi_pass asgi_helloworld:app;
             }
-            location /wsgi {
             
-                # still ongoing
-                
-                wsgi_pass wsgi_app:app;
-                
+            location /wsgi { 
+                # still ongoing 
+                wsgi_pass wsgi_app:app; 
             }
         }
     }
@@ -93,38 +89,26 @@ By example configuration:
 
 The asgi_helloworld app:
 
-    import asyncio
+.. code-block:: python
 
-    async def app(scope, recevie, send):
+    import asyncio
     
+    async def app(scope, recevie, send):
         data = await recevie()
-        
-        await send({
-        
-            "type": "http.response.start",
-            
-            "status":200,
-            
-            "headers": []
-            
+        await send({ 
+            "type": "http.response.start", 
+            "status":200, 
+            "headers": [] 
         })
-        await send({
-        
-            "type": "http.response.body",
-            
-            "body": b"Hello World!\n" + str(data).encode() + b"\n",
-            
-            "more_body": True
-            
+        await send({ 
+            "type": "http.response.body", 
+            "body": b"Hello World!\n" + str(data).encode() + b"\n", 
+            "more_body": True 
         })
-        await asyncio.sleep(5)
-        
-        await send({
-        
-            "type": "http.response.body",
-            
-            "body": str(scope).encode()
-            
+        await asyncio.sleep(5) 
+        await send({ 
+            "type": "http.response.body", 
+            "body": str(scope).encode() 
         })
 
 
