@@ -84,6 +84,12 @@ cdef extern from "ngx_core.h":
 
     ctypedef struct ngx_pool_t:
         pass 
+
+    ctypedef void (*ngx_pool_cleanup_pt)(void *data)
+    ctypedef struct ngx_pool_cleanup_t:
+        ngx_pool_cleanup_pt handler
+        void                 *data
+    ngx_pool_cleanup_t *ngx_pool_cleanup_add(ngx_pool_t *p, size_t size)
     
     void *ngx_palloc(ngx_pool_t *, size_t)
 

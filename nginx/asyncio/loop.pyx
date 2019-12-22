@@ -1,14 +1,16 @@
 from cpython cimport Py_INCREF, Py_DECREF
 
 from .nginx_core cimport ngx_cycle_t, ngx_calloc, ngx_free
-from .nginx_event cimport ngx_event_t, ngx_post_event, ngx_add_timer
-from .nginx_event cimport ngx_posted_events
+from .nginx_event cimport ngx_event_t, ngx_post_event, ngx_add_timer,\
+    ngx_event_del_timer, ngx_posted_events, ngx_notify
 
 # import contextvars
 import logging
 import time
 import traceback
-from asyncio import Task, AbstractEventLoopPolicy, Future
+import queue
+from asyncio import Task, AbstractEventLoopPolicy, Future, futures
+import concurrent
 
 log = logging.Logger(__name__)
 
@@ -20,8 +22,7 @@ cdef class Event:
         object _args
         object _context
         object _cancled
-        object _post_callback
-        object _post_args
+        object _post_callbacks
 
     def __cinit__(self, callback, args, context):
         self.event = <ngx_event_t *> ngx_calloc(sizeof(ngx_event_t),
@@ -35,8 +36,7 @@ cdef class Event:
         #    context = contextvars.copy_context()
         self._context = context
         self._cancled = False
-        self._post_callback = None
-        self._post_args = []
+        self._post_callbacks = []
 
     def __dealloc__(self):
         ngx_free(self.event)
@@ -53,12 +53,14 @@ cdef class Event:
             traceback.print_exc()
         finally:
             # wakeup coroutine suspend for this event
-            if self._post_callback:
-                self._post_callback(*self._post_args)
+            self.run_post_callbacks()
             Py_DECREF(self)
 
     def cancel(self):
         self._cancled = True
+        if self.event.timer_set:
+            ngx_event_del_timer(self.event)
+        self.run_post_callbacks()
 
     cdef call_later(self, float delay):
         ngx_add_timer(self.event, int(delay * 1000))
@@ -71,14 +73,33 @@ cdef class Event:
         return self
 
     cdef add_post_callback(self, callback, args):
-        self._post_callback = callback
-        self._post_args = args
+        self._post_callbacks.append([callback, args])
         return self
 
+    cdef run_post_callbacks(self):
+        for callback, args in self._post_callbacks:
+            callback(*args)
+
+cdef void _ngx_event_loop_post(ngx_event_t *ev):
+    """post events in loop's event queue
+    """
+    cdef Event event
+    loop = asyncio.get_event_loop()
+    while not loop._event_queue.empty():
+        try: 
+            event = loop._event_queue.get_nowait()
+            event.post()
+        except queue.Empty:
+            pass
 
 class NginxEventLoop:
     _current_coro = None
     _exception_handler = None
+    _default_executor = None
+    def __init__(self):
+        # used for call_soon_threadsafe
+        self._event_queue = queue.Queue()
+
     def create_task(self, coro):
         return Task(coro, loop=self)
 
@@ -111,6 +132,22 @@ class NginxEventLoop:
     def call_exception_handler(self, context):
         if self._exception_handler:
             self._exception_handler(context)
+
+    def call_soon_threadsafe(self, callback, *args):
+        if <void *>ngx_notify == NULL:
+            raise NotImplementedError
+        cdef Event event = Event(callback, args)
+        self._event_queue.put(Event)
+        ngx_notify(_ngx_event_loop_post)
+        return event
+
+    def run_in_executor(self, executor, func, *args):
+        if executor is None:
+            executor = self._default_executor
+            if executor is None:
+                executor = concurrent.futures.ThreadPoolExecutor()
+                self._default_executor = executor
+        return futures.wrap_future(executor.submit(func, *args), loop=self)
 
     def _run_coro(self, coro):
         """

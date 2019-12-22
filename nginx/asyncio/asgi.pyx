@@ -11,11 +11,12 @@ from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf,\
 from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
     ngx_buf_t, ngx_palloc, ngx_memcpy, ngx_list_push, ngx_create_temp_buf,\
     ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t,\
-    bytes_from_nginx_str, NGX_LOG_ERR
+    bytes_from_nginx_str, NGX_LOG_ERR, ngx_pool_cleanup_t, ngx_pool_cleanup_add
 from cpython.bytes cimport PyBytes_FromStringAndSize
 from .utils import import_by_path, Asgi2ToAsgi3
 import os
 import asyncio
+from cpython cimport Py_INCREF, Py_DECREF
 
 # __author__ = 'ly3too@qq.com'
 # __copyright__ = "Copyright 2019, ly3too@qq.com"
@@ -143,7 +144,21 @@ cdef class NgxAsgiCtx:
         self.response_complete = False
         self.file_off = -1
 
+    @staticmethod
+    cdef void clean_up(void *data):
+        cdef NgxAsgiCtx asgi_ctx = <NgxAsgiCtx>data
+        Py_DECREF(asgi_ctx)
+
     cdef init(self, ngx_http_request_t *request):
+        Py_INCREF(self)
+        cdef ngx_pool_cleanup_t  *cln
+        cln = ngx_pool_cleanup_add(request.pool, sizeof(self))
+        if cln == NULL:
+            Py_DECREF(self)
+            raise Exception('failed to add cleanup handler')
+        cln.handler = NgxAsgiCtx.clean_up
+        cln.data = <void *>self
+
         self.request = request
         self.scope = {
             "type": "http",
