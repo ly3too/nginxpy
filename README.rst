@@ -61,9 +61,9 @@ Installation
 
 Usage
 -----------
-By example configuration:
+By example configuration
 
-.. code-block:: shell
+.. code-block:: shell 
     http {
         # python_path specifies pathes to search from (PYTHONPATH), before python initinallization. 
         # if not specified, the default PYTHONPATH is used
@@ -83,9 +83,9 @@ By example configuration:
     }
 
 
-The asgi_helloworld app: 
+The asgi_helloworld app
 
-.. code-block:: python
+.. code-block:: python 
     import asyncio
 
     async def app(scope, recevie, send):
