@@ -1,3 +1,9 @@
+"""Implementation of asgi and wsgi functionality.
+
+Take advantage of the non-bloking feature of nginx and python3's asyncio.
+Try to adapt the nginx request processing phase to python3's event loop.
+"""
+
 from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf,\
     ngx_http_finalize_request, NGX_HTTP_INTERNAL_SERVER_ERROR,\
     ngx_http_send_header, ngx_http_output_filter,\
@@ -7,9 +13,14 @@ from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
     ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t,\
     bytes_from_nginx_str, NGX_LOG_ERR
 from cpython.bytes cimport PyBytes_FromStringAndSize
-from .utils import import_by_path
+from .utils import import_by_path, Asgi2ToAsgi3
 import os
 import asyncio
+
+# __author__ = 'ly3too@qq.com'
+# __copyright__ = "Copyright 2019, ly3too@qq.com"
+# __credits__ = []
+# __license__ = "Apache 2.0"
 
 cdef get_headers(ngx_http_request_t *r):
     """
@@ -43,7 +54,11 @@ cdef get_loc_app(ngx_http_request_t *r):
         # todo: wsgi to asgi adapter
         return None
     
-    return app
+    # asgi2/asgi3
+    if plcf.version == 2:
+        return Asgi2ToAsgi3(app)
+    else:
+        return app
 
 cdef void request_read_post_handler(ngx_http_request_t *request):
     """
