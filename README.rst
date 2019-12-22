@@ -75,8 +75,10 @@ By example configuration:
             listen 80;
             
             location / {
-                # same as openresty's content_by_xx. handle request by asgi app      
+                # same as openresty's content_by_xx. handle request by asgi app
+                # by default asgi version 3    
                 asgi_pass asgi_helloworld:app;
+                # asgi_pass asgi_helloworld:app2 2; asgi version 2
             }
             
             location /wsgi { 
