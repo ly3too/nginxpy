@@ -6,3 +6,8 @@ History
 ------------------
 
 * First release on PyPI with asyncio sleep demo.
+
+
+0.1.1 (2019-12-22)
+------------------
+* add asgi application support

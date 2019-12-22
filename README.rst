@@ -20,7 +20,7 @@ NGINXpy
 
 
 
-Embed Python in NGINX.
+Embed Python in NGINX, supporting ASGI, WSGI
 
 forked from https://github.com/decentfox/nginxpy
 
@@ -63,7 +63,7 @@ Usage
 -----------
 By example configuration:
 
-.. code-block:: nginx
+.. code-block:: shell
     http {
         # python_path specifies pathes to search from (PYTHONPATH), before python initinallization. 
         # if not specified, the default PYTHONPATH is used
@@ -82,9 +82,10 @@ By example configuration:
         }
     }
 
+
 The asgi_helloworld app: 
 
-..code-block:: python
+.. code-block:: python
     import asyncio
 
     async def app(scope, recevie, send):
