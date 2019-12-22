@@ -99,3 +99,7 @@ cdef extern from "ngx_core.h":
 cdef inline str from_nginx_str(ngx_str_t str):
     return PyBytes_FromStringAndSize(<char*>str.data,
                                      str.len).decode('iso-8859-1')
+
+cdef inline bytes bytes_from_nginx_str(ngx_str_t str):
+    return PyBytes_FromStringAndSize(<char*>str.data,
+                                     str.len)

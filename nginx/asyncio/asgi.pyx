@@ -4,7 +4,8 @@ from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf,\
     ngx_http_read_client_request_body, NGX_HTTP_SPECIAL_RESPONSE
 from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
     ngx_buf_t, ngx_palloc, ngx_memcpy, ngx_list_push, ngx_create_temp_buf,\
-    ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t
+    ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t,\
+    bytes_from_nginx_str, NGX_LOG_ERR
 from cpython.bytes cimport PyBytes_FromStringAndSize
 from .utils import import_by_path
 import os
@@ -21,8 +22,8 @@ cdef get_headers(ngx_http_request_t *r):
     headers = list()
     while part:
         for i in range(part.nelts):
-            key = from_nginx_str(h[i].key)
-            val = from_nginx_str(h[i].value)
+            key = bytes_from_nginx_str(h[i].key)
+            val = bytes_from_nginx_str(h[i].value)
             headers.append([key, val])
 
         part = part.next
@@ -35,7 +36,7 @@ cdef get_loc_app(ngx_http_request_t *r):
     """
     cdef ngx_http_python_loc_conf_t *plcf = \
         <ngx_http_python_loc_conf_t *>ngx_http_get_module_loc_conf(r, ngx_python_module)
-    app_str = from_nginx_str(plcf.asgi_pass).decode("utf-8")
+    app_str = from_nginx_str(plcf.asgi_pass)
     app = import_by_path(app_str)
 
     if plcf.is_wsgi:
@@ -112,23 +113,30 @@ cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
 cdef class NgxAsgiCtx:
     cdef ngx_http_request_t *request
     cdef ngx_chain_t *in_chain
+    cdef bint closed
+    cdef bint response_started
+    cdef bint response_complete
     cdef ssize_t file_off
+    cdef public object scope
+    cdef public object app
+    cdef public object app_coro
     def __cinit__(self):
+        self.request = NULL
         self.in_chain = NULL
         self.closed = False
         self.response_started = False
         self.response_complete = False
-        self.request = NULL
         self.file_off = -1
 
     cdef init(self, ngx_http_request_t *request):
+        self.request = request
         self.scope = {
             "type": "http",
             "http_version": "{}.{}".format(request.http_major, request.http_minor),
-            "method": from_nginx_str(request.method_name).decode("ascii"),
-            "path": from_nginx_str(request.uri).decode("ascii"),
-            "raw_path": from_nginx_str(request.unparsed_uri), # bytes
-            "query_string": from_nginx_str(request.args), # bytes
+            "method": from_nginx_str(request.method_name),
+            "path": from_nginx_str(request.uri),
+            "raw_path": bytes_from_nginx_str(request.unparsed_uri), # bytes
+            "query_string": bytes_from_nginx_str(request.args), # bytes
             "headers": get_headers(request),
         }
         self.app = get_loc_app(request)
@@ -136,10 +144,26 @@ cdef class NgxAsgiCtx:
             raise RuntimeError("failed to create app")
         self.file_off = -1
 
+    async def _coro_with_exception_handler(self, coro):
+        try:
+            await coro
+        except:
+            ngx_log_error(NGX_LOG_ERR, self.request.connection.log, 0,
+                      b'App interal error:\n' +
+                      traceback.format_exc().encode())
+            ngx_http_finalize_request(self.request, 
+                NGX_HTTP_INTERNAL_SERVER_ERROR)
+        finally:
+            if not self.response_complete:
+                self.response_complete = True
+                ngx_http_finalize_request(self.request, NGX_OK)
+
     cdef start_app(self):
+        ngx_log_error(NGX_LOG_DEBUG, self.request.connection.log, 0, 
+            b"start asgi app")
         self.app_coro = self.app(self.scope, self.receive, self.send)
         loop = asyncio.get_event_loop()
-        loop._run_coro(self.app_coro) 
+        loop._run_coro(self._coro_with_exception_handler(self.app_coro))
 
     async def receive(self):
         cdef ngx_buf_t *buf
@@ -179,9 +203,9 @@ cdef class NgxAsgiCtx:
 
     async def send(self, data):
         message_type = data["type"]
-        status = data["status"]
         
         if not self.response_started:
+            status = data["status"]
             # Sending response status line and headers
             if message_type != "http.response.start":
                 msg = "Expected ASGI message 'http.response.start', but got '{}'."
@@ -205,7 +229,7 @@ cdef class NgxAsgiCtx:
             # Handle response completion
             if not more_body:
                 self.response_complete = True
-                
+                ngx_http_finalize_request(self.request, NGX_OK)      
 
         else:
             # Response already sent
@@ -227,6 +251,7 @@ cdef class NgxAsgiCtx:
         return new_asgi
 
 cdef public ngx_int_t ngx_http_python_asgi_handler(ngx_http_request_t *r):
+    ngx_log_error(NGX_LOG_DEBUG, r.connection.log, 0, b"entered asgi handler")
     # create scope
     try:
         asgi_ctx =  NgxAsgiCtx.get_or_set_asgi_ctx(r)
@@ -235,7 +260,6 @@ cdef public ngx_int_t ngx_http_python_asgi_handler(ngx_http_request_t *r):
                       b'Error occured in post_read:\n' +
                       traceback.format_exc().encode())
         return NGX_HTTP_INTERNAL_SERVER_ERROR
-
 
     # receive content and start app
     cdef ngx_int_t rc = ngx_http_read_client_request_body(r, 

@@ -3,7 +3,6 @@
 #include <ngx_http.h>
 #include <Python.h>
 #include "nginx.h"
-#include "ddebug.h"
 #include "ngx_python_module.h"
 
 
@@ -18,6 +17,7 @@ static char *ngx_http_wsgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_python_path(ngx_conf_t *cf, ngx_command_t *cmd, 
     void *conf);
 static char *python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static void *ngx_python_create_main_conf(ngx_conf_t *cf);
 
 typedef struct {
     ngx_str_t python_path;
@@ -54,7 +54,7 @@ static ngx_http_module_t  ngx_python_module_ctx  = {
     NULL,                                  /* preconfiguration */
     ngx_python_postconfiguration,          /* postconfiguration */
 
-    NULL,                                  /* create main configuration */
+    ngx_python_create_main_conf,           /* create main configuration */
     NULL,                                  /* init main configuration */
 
     NULL,                                  /* create server configuration */
@@ -122,16 +122,17 @@ ngx_python_exit_process(ngx_cycle_t *cycle) {
 static ngx_int_t
 ngx_python_postconfiguration(ngx_conf_t *cf) {
     ngx_http_handler_pt        *h;
-    ngx_http_core_main_conf_t  *cmcf;
+    // ngx_http_core_main_conf_t  *cmcf;
     ngx_http_python_main_conf_t *pmcf;
 
-    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_POST_READ_PHASE].handlers);
-    if (h == NULL) {
-        return NGX_ERROR;
-    }
-    *h = nginxpy_post_read;
+    // this seems kill the performance, so removed here, planing to support
+    // this functionality by explicit configuration
+    // cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+    // h = ngx_array_push(&cmcf->phases[NGX_HTTP_POST_READ_PHASE].handlers);
+    // if (h == NULL) {
+    //     return NGX_ERROR;
+    // }
+    // *h = nginxpy_post_read;
 
     // set python path
     pmcf = ngx_http_conf_get_module_main_conf(cf, ngx_python_module);
@@ -140,13 +141,24 @@ ngx_python_postconfiguration(ngx_conf_t *cf) {
             NULL);
         Py_SetPath(python_path);
         ngx_log_error(NGX_LOG_NOTICE, cf->cycle->log, 0,
-                  "set python path to: %s", python_path);
+                  "set python path to: %s", pmcf->python_path.data);
         PyMem_RawFree(python_path);
     }
 
     return NGX_OK;
 }
 
+static void *
+ngx_python_create_main_conf(ngx_conf_t *cf){
+    ngx_http_python_loc_conf_t  *conf;
+
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_python_main_conf_t));
+    if (conf == NULL) {
+        return NULL;
+    }
+
+    return conf;
+}
 
 static void *
 ngx_http_python_create_loc_conf(ngx_conf_t *cf)
@@ -168,6 +180,10 @@ ngx_http_python_path(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_python_main_conf_t *pmcf = conf;
     ngx_str_t *value;
 
+    if (!pmcf) {
+        return "create python path failed";
+    }
+
     if (pmcf->python_path.len != 0) {
         return "is duplicate";
     }
@@ -175,7 +191,6 @@ ngx_http_python_path(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value = cf->args->elts;
     pmcf->python_path.len = value[1].len;
     pmcf->python_path.data = value[1].data;
-    dd("set python path: %s", value[1].data);
 
     return NGX_CONF_OK;
 }
@@ -194,7 +209,8 @@ python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value = cf->args->elts;
     plcf->asgi_pass.len = value[1].len;
     plcf->asgi_pass.data = value[1].data;
-    dd("add asgi app: %s", value[1].data);
+    ngx_log_error(NGX_LOG_DEBUG, cf->cycle->log, 0,
+        "add asgi app: %s", value[1].data);
 
     /*  register location content handler */
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);

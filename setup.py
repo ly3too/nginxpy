@@ -71,7 +71,7 @@ class nginxpy_build(build):
             if os.path.exists(nginx_tarball):
                 print('reusing', nginx_tarball)
             else:
-                print('downloading', nginx_url)
+                print('downloading {} to: {}'.format(nginx_url, nginx_tarball))
                 urlretrieve(nginx_url, nginx_tarball)
             print('extracting tarball')
             subprocess.check_call(['tar', 'xvf', nginx_tarball,

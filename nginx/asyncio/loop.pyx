@@ -19,8 +19,11 @@ cdef class Event:
         object _callback
         object _args
         object _context
+        object _cancled
+        object _post_callback
+        object _post_args
 
-    def __cinit__(self, loop, callback, args, context, coro = None):
+    def __cinit__(self, callback, args, context):
         self.event = <ngx_event_t *> ngx_calloc(sizeof(ngx_event_t),
                                                 current_cycle.log.log)
         self.event.log = current_cycle.log.log
@@ -33,7 +36,7 @@ cdef class Event:
         self._context = context
         self._cancled = False
         self._post_callback = None
-        self._post_args = None
+        self._post_args = []
 
     def __dealloc__(self):
         ngx_free(self.event)
@@ -70,10 +73,12 @@ cdef class Event:
     cdef add_post_callback(self, callback, args):
         self._post_callback = callback
         self._post_args = args
+        return self
 
 
-cdef class NginxEventLoop:
+class NginxEventLoop:
     _current_coro = None
+    _exception_handler = None
     def create_task(self, coro):
         return Task(coro, loop=self)
 
@@ -84,17 +89,18 @@ cdef class NginxEventLoop:
         return time.monotonic()
 
     def call_later(self, delay, callback, *args, context=None):
-        return Event(callback, args, context)\
-            .add_post_callback(self._run_coro, self._current_coro)\
-            .call_later(delay)
+        cdef Event event = Event(callback, args, context)
+        event.add_post_callback(self._run_coro, [self._current_coro])
+        return event.call_later(delay)
 
     def call_at(self, when, callback, *args, context=None):
         return self.call_later(when - self.time(), callback, *args,
                                context=context)
 
     def call_soon(self, callback, *args, context=None):
-        return Event(callback, args, context)\
-            .add_post_callback(self._run_coro, self._current_coro).post()
+        cdef Event event = Event(callback, args, context)
+        event.add_post_callback(self._run_coro, [self._current_coro])
+        return event.post()
 
     def get_debug(self):
         return False
