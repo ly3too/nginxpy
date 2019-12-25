@@ -43,7 +43,7 @@ cdef class Event:
         self.event = NULL
 
     @staticmethod
-    cdef void _run(ngx_event_t *ev):
+    cdef void _run(ngx_event_t *ev) with gil:
         cdef Event self = <Event> ev.data
         try:
             #self._context.run(self._callback, *self._args)
@@ -80,14 +80,14 @@ cdef class Event:
         for callback, args in self._post_callbacks:
             callback(*args)
 
-cdef void _ngx_event_loop_post(ngx_event_t *ev):
+cdef void _ngx_event_loop_post(ngx_event_t *ev) with gil:
     """post events in loop's event queue
     """
     cdef Event event
     loop = asyncio.get_event_loop()
     while not loop._event_queue.empty():
         try: 
-            event = loop._event_queue.get_nowait()
+            event = <Event>loop._event_queue.get_nowait()
             event.post()
         except queue.Empty:
             pass
@@ -136,8 +136,8 @@ class NginxEventLoop:
     def call_soon_threadsafe(self, callback, *args):
         if <void *>ngx_notify == NULL:
             raise NotImplementedError
-        cdef Event event = Event(callback, args)
-        self._event_queue.put(Event)
+        cdef Event event = Event(callback, args, None)
+        self._event_queue.put(event)
         ngx_notify(_ngx_event_loop_post)
         return event
 
