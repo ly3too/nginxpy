@@ -1,4 +1,4 @@
-from .nginx_core cimport ngx_queue_t, ngx_msec_t, ngx_log_t
+from .nginx_core cimport ngx_queue_t, ngx_msec_t, ngx_log_t, ngx_int_t
 
 cdef extern from "ngx_event.h":
     ctypedef void (*ngx_event_handler_pt)(ngx_event_t *ev)
@@ -8,8 +8,12 @@ cdef extern from "ngx_event.h":
         ngx_event_handler_pt handler
         ngx_queue_t queue
         ngx_log_t *log
+        unsigned timer_set
+
     ngx_queue_t ngx_posted_events
 
     void ngx_post_event(ngx_event_t *ev, ngx_queue_t *q)
     void ngx_add_timer(ngx_event_t *ev, ngx_msec_t timer)
+    void ngx_event_del_timer(ngx_event_t *ev)
+    ngx_int_t ngx_notify(ngx_event_handler_pt)
 

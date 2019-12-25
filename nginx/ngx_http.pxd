@@ -35,7 +35,7 @@ cdef extern from "ngx_http.h":
 
     ctypedef void (*ngx_http_client_body_handler_pt)(ngx_http_request_t *r)
 
-    void ngx_http_core_run_phases(ngx_http_request_t *request)
+    void ngx_http_core_run_phases(ngx_http_request_t *request) nogil
     void *ngx_http_get_module_ctx(ngx_http_request_t *request,
                                   ngx_module_t module)
     void ngx_http_set_ctx(ngx_http_request_t *request, void *ctx,
@@ -44,14 +44,14 @@ cdef extern from "ngx_http.h":
     void *ngx_http_get_module_loc_conf(ngx_http_request_t *r, 
         ngx_module_t module)
 
-    void ngx_http_finalize_request(ngx_http_request_t *, ngx_int_t)
+    void ngx_http_finalize_request(ngx_http_request_t *, ngx_int_t) nogil
 
-    ngx_int_t ngx_http_send_header(ngx_http_request_t *)
+    ngx_int_t ngx_http_send_header(ngx_http_request_t *) nogil
 
-    ngx_int_t ngx_http_output_filter(ngx_http_request_t *, ngx_chain_t *)
+    ngx_int_t ngx_http_output_filter(ngx_http_request_t *, ngx_chain_t *) nogil
 
     ngx_int_t ngx_http_read_client_request_body(ngx_http_request_t *r,
-        ngx_http_client_body_handler_pt post_handler)
+        ngx_http_client_body_handler_pt post_handler) nogil
 
     const int NGX_HTTP_INTERNAL_SERVER_ERROR
     const int NGX_HTTP_SPECIAL_RESPONSE

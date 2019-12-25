@@ -10,6 +10,7 @@ static ngx_int_t ngx_python_init_process(ngx_cycle_t *cycle);
 static void ngx_python_exit_process(ngx_cycle_t *cycle);
 static ngx_int_t ngx_python_postconfiguration(ngx_conf_t *cf);
 static wchar_t *python_exec = NULL;
+static PyThreadState *main_thread_state = NULL;
 
 
 static void *ngx_http_python_create_loc_conf(ngx_conf_t *cf);
@@ -83,6 +84,7 @@ ngx_module_t  ngx_python_module = {
 
 static ngx_int_t
 ngx_python_init_process(ngx_cycle_t *cycle) {
+    ngx_int_t ret;
     if (python_exec == NULL) {
         python_exec = Py_DecodeLocale(PYTHON_EXEC, NULL);
         if (python_exec == NULL) {
@@ -100,12 +102,18 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Initializing Python...");
     Py_Initialize();
+    if (!PyEval_ThreadsInitialized()) {
+        PyEval_InitThreads();
+    }
     if (PyImport_ImportModule("nginx._nginx") == NULL) {
         ngx_log_error(NGX_LOG_CRIT, cycle->log, 0,
                       "Could not import nginxpy extension.");
         return NGX_ERROR;
     }
-    return nginxpy_init_process(cycle);
+    
+    ret = nginxpy_init_process(cycle);
+    main_thread_state = PyEval_SaveThread();
+    return ret;
 }
 
 static void
