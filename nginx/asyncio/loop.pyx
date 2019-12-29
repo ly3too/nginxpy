@@ -12,6 +12,9 @@ import queue
 from asyncio import Task, AbstractEventLoopPolicy, Future, futures
 import concurrent
 
+#todo delete
+import sys, traceback
+
 log = logging.Logger(__name__)
 
 
@@ -49,11 +52,9 @@ cdef class Event:
             #self._context.run(self._callback, *self._args)
             if not self._cancled:
                 self._callback(*self._args)
-        except Exception as exc:
-            traceback.print_exc()
+        except Exception:
+            log.error(traceback.format_exc())
         finally:
-            # wakeup coroutine suspend for this event
-            self.run_post_callbacks()
             Py_DECREF(self)
 
     def cancel(self):
@@ -72,13 +73,6 @@ cdef class Event:
         Py_INCREF(self)
         return self
 
-    cdef add_post_callback(self, callback, args):
-        self._post_callbacks.append([callback, args])
-        return self
-
-    cdef run_post_callbacks(self):
-        for callback, args in self._post_callbacks:
-            callback(*args)
 
 cdef void _ngx_event_loop_post(ngx_event_t *ev) with gil:
     """post events in loop's event queue
@@ -91,6 +85,7 @@ cdef void _ngx_event_loop_post(ngx_event_t *ev) with gil:
             event.post()
         except queue.Empty:
             pass
+
 
 class NginxEventLoop:
     _current_coro = None
@@ -110,21 +105,17 @@ class NginxEventLoop:
         return time.monotonic()
 
     def call_later(self, delay, callback, *args, context=None):
-        cdef Event event = Event(callback, args, context)
-        event.add_post_callback(self._run_coro, [self._current_coro])
-        return event.call_later(delay)
+        return Event(callback, args, context).call_later(delay)
 
     def call_at(self, when, callback, *args, context=None):
         return self.call_later(when - self.time(), callback, *args,
                                context=context)
 
     def call_soon(self, callback, *args, context=None):
-        cdef Event event = Event(callback, args, context)
-        event.add_post_callback(self._run_coro, [self._current_coro])
-        return event.post()
+        return Event(callback, args, context).post()
 
     def get_debug(self):
-        return False
+        return True
 
     def set_exception_handler(self, handler):
         self._exception_handler = handler
@@ -148,30 +139,6 @@ class NginxEventLoop:
                 executor = concurrent.futures.ThreadPoolExecutor()
                 self._default_executor = executor
         return futures.wrap_future(executor.submit(func, *args), loop=self)
-
-    def _run_coro(self, coro):
-        """
-        schedule a top coroutine
-        """
-        if coro is None:
-            return
-        try:
-            self._current_coro = coro
-            coro.send(None)
-        except StopIteration as e:
-            context = {
-                "message": "",
-                "exception": e
-            }
-            self.call_exception_handler(context)
-        except Exception as e:
-            context = {
-                "message": "exception raised from coroutine",
-                "exception": e
-            }
-            self.call_exception_handler(context)
-        finally:
-            self._current_coro = None
 
 
 class NginxEventLoopPolicy(AbstractEventLoopPolicy):

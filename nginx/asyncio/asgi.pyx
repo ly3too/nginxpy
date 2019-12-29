@@ -202,7 +202,7 @@ cdef class NgxAsgiCtx:
         self.app_coro = self._coro_with_exception_handler(
             self.app(self.scope, self.receive, self.send))
         loop = asyncio.get_event_loop()
-        loop._run_coro(self.app_coro)
+        loop.create_task(self.app_coro)
 
     async def receive(self):
         cdef ngx_buf_t *buf
