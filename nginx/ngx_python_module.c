@@ -101,7 +101,7 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
     }
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Initializing Python...");
-    Py_Initialize();
+    Py_InitializeEx(0);
     if (!PyEval_ThreadsInitialized()) {
         PyEval_InitThreads();
     }
@@ -118,6 +118,7 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
 
 static void
 ngx_python_exit_process(ngx_cycle_t *cycle) {
+    PyEval_RestoreThread(main_thread_state);
     nginxpy_exit_process(cycle);
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Finalizing Python...");

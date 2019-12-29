@@ -47,7 +47,8 @@ cdef get_loc_app(ngx_http_request_t *r):
     get the app from location config
     """
     cdef ngx_http_python_loc_conf_t *plcf = \
-        <ngx_http_python_loc_conf_t *>ngx_http_get_module_loc_conf(r, ngx_python_module)
+        <ngx_http_python_loc_conf_t *>ngx_http_get_module_loc_conf(r, 
+            ngx_python_module)
     app_str = from_nginx_str(plcf.asgi_pass)
     app = import_by_path(app_str)
 
@@ -144,9 +145,15 @@ cdef class NgxAsgiCtx:
         self.response_complete = False
         self.file_off = -1
 
+    def __dealloc__(self):
+        print("destroy asgi request")
+
     @staticmethod
     cdef void clean_up(void *data) with gil:
         cdef NgxAsgiCtx asgi_ctx = <NgxAsgiCtx>data
+        asgi_ctx.request = NULL
+        asgi_ctx.closed = True
+        print("cleanup asgi")
         Py_DECREF(asgi_ctx)
 
     cdef init(self, ngx_http_request_t *request):
@@ -162,7 +169,8 @@ cdef class NgxAsgiCtx:
         self.request = request
         self.scope = {
             "type": "http",
-            "http_version": "{}.{}".format(request.http_major, request.http_minor),
+            "http_version": "{}.{}".format(request.http_major, 
+                request.http_minor),
             "method": from_nginx_str(request.method_name),
             "path": from_nginx_str(request.uri),
             "raw_path": bytes_from_nginx_str(request.unparsed_uri), # bytes
@@ -233,8 +241,16 @@ cdef class NgxAsgiCtx:
         return data
 
     async def send(self, data):
-        message_type = data["type"]
+        if self.closed:
+            msg = "Rrequest closend"
+            raise RuntimeError(msg)
         
+        message_type = data["type"]
+        if self.response_complete:
+            # Response already sent
+            msg = "Unexpected ASGI message '{}' sent, after response already completed."
+            raise RuntimeError(msg.format(message_type))
+
         if not self.response_started:
             status = data["status"]
             # Sending response status line and headers
@@ -250,8 +266,8 @@ cdef class NgxAsgiCtx:
         elif not self.response_complete:
             # Sending response body
             if message_type != "http.response.body":
-                msg = "Expected ASGI message 'http.response.body', but got '%s'."
-                raise RuntimeError(msg % message_type)
+                msg = "Expected ASGI message 'http.response.body', but got '{}'."
+                raise RuntimeError(msg.format(message_type))
 
             body = data.get("body", b"")
             more_body = data.get("more_body", False)
@@ -261,11 +277,6 @@ cdef class NgxAsgiCtx:
             if not more_body:
                 self.response_complete = True
                 ngx_http_finalize_request(self.request, NGX_OK)      
-
-        else:
-            # Response already sent
-            msg = "Unexpected ASGI message '%s' sent, after response already completed."
-            raise RuntimeError(msg % message_type)
         
     
     @staticmethod
