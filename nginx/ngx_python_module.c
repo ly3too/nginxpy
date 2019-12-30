@@ -11,6 +11,9 @@ static void ngx_python_exit_process(ngx_cycle_t *cycle);
 static ngx_int_t ngx_python_postconfiguration(ngx_conf_t *cf);
 static wchar_t *python_exec = NULL;
 static PyThreadState *main_thread_state = NULL;
+static ngx_thread_pool_t *python_thread_pool = NULL;
+static ngx_str_t python_thread_pool_str = ngx_string("python_threads");
+static ngx_str_t default_str = ngx_string("default");
 
 
 static void *ngx_http_python_create_loc_conf(ngx_conf_t *cf);
@@ -19,10 +22,20 @@ static char *ngx_http_python_path(ngx_conf_t *cf, ngx_command_t *cmd,
     void *conf);
 static char *python_asgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_python_create_main_conf(ngx_conf_t *cf);
+static void python_thread_dumy(void *data, ngx_log_t *log);
+static void python_thread_done(ngx_event_t *ev);
+
 
 typedef struct {
     ngx_str_t python_path;
 } ngx_http_python_main_conf_t;
+
+typedef struct 
+{
+    void *task_ptr;
+    ngx_event_handler_pt  inner_handler;
+} python_thread_ctx_t;
+
 
 static ngx_command_t  ngx_python_commands[] = {
     { ngx_string("python_path"),
@@ -81,9 +94,47 @@ ngx_module_t  ngx_python_module = {
         NGX_MODULE_V1_PADDING
 };
 
+ngx_int_t ngx_python_notify(ngx_event_handler_pt evt_handler){
+    if (!python_thread_pool) {
+        return ngx_notify(evt_handler);
+    }
+
+    ngx_thread_task_t *task 
+        = calloc(sizeof(ngx_thread_task_t) + sizeof(python_thread_ctx_t), 1);
+    if (task == NULL) {
+        return NGX_ERROR;
+    }
+
+    python_thread_ctx_t *ctx = (python_thread_ctx_t *)(task + 1);
+    ctx->task_ptr = task;
+    ctx->inner_handler = evt_handler;
+
+    task->handler = python_thread_dumy;
+    task->event.handler = python_thread_done;
+    task->event.data = ctx;
+
+    if (ngx_thread_task_post(python_thread_pool, task) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+
 
 static ngx_int_t
 ngx_python_init_process(ngx_cycle_t *cycle) {
+    python_thread_pool = ngx_thread_pool_get(cycle, &python_thread_pool_str);
+    if (!python_thread_pool) {
+        ngx_log_error(NGX_LOG_INFO, cycle->log, 0,
+                  "use default thread pool");
+        python_thread_pool = ngx_thread_pool_get(cycle, &default_str);
+    }
+    if (!python_thread_pool) {
+        ngx_log_error(NGX_LOG_WARN, cycle->log, 0,
+            "failed to get default thread pool, ngx_notify used,"
+            " which is not thread safe");
+    }
+
     ngx_int_t ret;
     if (python_exec == NULL) {
         python_exec = Py_DecodeLocale(PYTHON_EXEC, NULL);
@@ -101,7 +152,7 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
     }
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Initializing Python...");
-    Py_Initialize();
+    Py_InitializeEx(0);
     if (!PyEval_ThreadsInitialized()) {
         PyEval_InitThreads();
     }
@@ -118,6 +169,7 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
 
 static void
 ngx_python_exit_process(ngx_cycle_t *cycle) {
+    PyEval_RestoreThread(main_thread_state);
     nginxpy_exit_process(cycle);
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Finalizing Python...");
@@ -241,4 +293,16 @@ ngx_http_wsgi_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     plcf->is_wsgi = 1;
 
     return python_asgi_pass(cf, cmd, conf);
+}
+
+static void 
+python_thread_dumy(void *data, ngx_log_t *log) {
+    return;
+}
+
+static void
+python_thread_done(ngx_event_t *ev) {
+    python_thread_ctx_t *ctx = ev->data;
+    ctx->inner_handler(ev);
+    free(ctx->task_ptr);
 }

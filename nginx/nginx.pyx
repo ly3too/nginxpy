@@ -9,6 +9,7 @@ from .nginx_core cimport NGX_OK, NGX_ERROR, NGX_DECLINED, NGX_AGAIN
 from .nginx_core cimport NGX_LOG_DEBUG, NGX_LOG_CRIT
 from .nginx_core cimport ngx_log_error
 from .nginx_core cimport ngx_chain_t, ngx_str_t
+from .nginx_event cimport ngx_event_handler_pt
 
 
 cdef extern from "ngx_python_module.h":
@@ -17,6 +18,8 @@ cdef extern from "ngx_python_module.h":
         int is_wsgi
         ngx_str_t asgi_pass
         int version
+
+    ngx_int_t ngx_python_notify(ngx_event_handler_pt evt_handler)
 
 
 class ReturnCode(IntEnum):
