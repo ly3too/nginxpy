@@ -12,7 +12,7 @@ static ngx_int_t ngx_python_postconfiguration(ngx_conf_t *cf);
 static wchar_t *python_exec = NULL;
 static PyThreadState *main_thread_state = NULL;
 static ngx_thread_pool_t *python_thread_pool = NULL;
-static ngx_str_t python_thread_pool_str = ngx_string("thread_pool");
+static ngx_str_t python_thread_pool_str = ngx_string("python_threads");
 static ngx_str_t default_str = ngx_string("default");
 
 
