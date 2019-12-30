@@ -2,7 +2,7 @@ from cpython cimport Py_INCREF, Py_DECREF
 
 from .nginx_core cimport ngx_cycle_t, ngx_calloc, ngx_free
 from .nginx_event cimport ngx_event_t, ngx_post_event, ngx_add_timer,\
-    ngx_event_del_timer, ngx_posted_events, ngx_notify
+    ngx_event_del_timer, ngx_posted_events
 
 # import contextvars
 import logging
@@ -125,11 +125,9 @@ class NginxEventLoop:
             self._exception_handler(context)
 
     def call_soon_threadsafe(self, callback, *args):
-        if <void *>ngx_notify == NULL:
-            raise NotImplementedError
         cdef Event event = Event(callback, args, None)
         self._event_queue.put(event)
-        ngx_notify(_ngx_event_loop_post)
+        ngx_python_notify(_ngx_event_loop_post)
         return event
 
     def run_in_executor(self, executor, func, *args):

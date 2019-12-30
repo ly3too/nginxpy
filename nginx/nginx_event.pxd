@@ -15,5 +15,4 @@ cdef extern from "ngx_event.h":
     void ngx_post_event(ngx_event_t *ev, ngx_queue_t *q)
     void ngx_add_timer(ngx_event_t *ev, ngx_msec_t timer)
     void ngx_event_del_timer(ngx_event_t *ev)
-    ngx_int_t ngx_notify(ngx_event_handler_pt)
 
