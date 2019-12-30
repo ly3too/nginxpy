@@ -17,6 +17,9 @@ from .utils import import_by_path, Asgi2ToAsgi3
 import os
 import asyncio
 from cpython cimport Py_INCREF, Py_DECREF
+import logging
+
+log = logging.Logger(__name__)
 
 # __author__ = 'ly3too@qq.com'
 # __copyright__ = "Copyright 2019, ly3too@qq.com"
@@ -145,15 +148,11 @@ cdef class NgxAsgiCtx:
         self.response_complete = False
         self.file_off = -1
 
-    def __dealloc__(self):
-        print("destroy asgi request")
-
     @staticmethod
     cdef void clean_up(void *data) with gil:
         cdef NgxAsgiCtx asgi_ctx = <NgxAsgiCtx>data
         asgi_ctx.request = NULL
         asgi_ctx.closed = True
-        print("cleanup asgi")
         Py_DECREF(asgi_ctx)
 
     cdef init(self, ngx_http_request_t *request):
