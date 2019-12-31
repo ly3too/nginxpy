@@ -152,7 +152,7 @@ ngx_python_init_process(ngx_cycle_t *cycle) {
     }
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "Initializing Python...");
-    Py_InitializeEx(0);
+    Py_InitializeEx(1);
     if (!PyEval_ThreadsInitialized()) {
         PyEval_InitThreads();
     }

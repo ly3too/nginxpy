@@ -13,7 +13,7 @@ from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
     ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t,\
     bytes_from_nginx_str, NGX_LOG_ERR, ngx_pool_cleanup_t, ngx_pool_cleanup_add
 from cpython.bytes cimport PyBytes_FromStringAndSize
-from .utils import import_by_path, Asgi2ToAsgi3
+from .asgi.utils import import_by_path, Asgi2ToAsgi3, Wsgi2Asgi
 import os
 import asyncio
 from cpython cimport Py_INCREF, Py_DECREF
@@ -57,7 +57,7 @@ cdef get_loc_app(ngx_http_request_t *r):
 
     if plcf.is_wsgi:
         # todo: wsgi to asgi adapter
-        return None
+        return Wsgi2Asgi(app, None)
     
     # asgi2/asgi3
     if plcf.version == 2:
@@ -121,13 +121,21 @@ cdef ngx_send_body(ngx_http_request_t *r, body, more_body):
     buf.last = <u_char *>ngx_cpymem(buf.last, <char *>body, body_len)
     buf.last_buf = not more_body
     buf.last_in_chain = 1
-    buf.memory = 1
+    if body_len > 0:
+        buf.memory = 1
+    else:
+        if not buf.last_buf:
+            buf.flush = 1
+        buf.memory = 0
+        buf.temporary = 0
+        buf.mmap = 0
+        buf.in_file = 0
     
     cdef ngx_chain_t out
     out.buf = buf 
     out.next = NULL
     if ngx_http_output_filter(r, &out) != NGX_OK:
-        raise RuntimeError('failed to send body')
+        raise RuntimeError('failed to send body: {}'.format(body))
 
 
 cdef class NgxAsgiCtx:
@@ -153,6 +161,7 @@ cdef class NgxAsgiCtx:
         cdef NgxAsgiCtx asgi_ctx = <NgxAsgiCtx>data
         asgi_ctx.request = NULL
         asgi_ctx.closed = True
+        log.debug("asgi clean up")
         Py_DECREF(asgi_ctx)
 
     cdef init(self, ngx_http_request_t *request):
@@ -185,23 +194,36 @@ cdef class NgxAsgiCtx:
         try:
             await coro
         except:
-            ngx_log_error(NGX_LOG_ERR, self.request.connection.log, 0,
-                      b'App interal error:\n' +
-                      traceback.format_exc().encode())
-            ngx_http_finalize_request(self.request, 
-                NGX_HTTP_INTERNAL_SERVER_ERROR)
+            self.finalize_with_exception()
+            
         finally:
             if not self.response_complete:
                 self.response_complete = True
                 ngx_http_finalize_request(self.request, NGX_OK)
 
+    cdef finalize_with_exception(self):
+        if self.request is not NULL:
+            ngx_log_error(NGX_LOG_ERR, self.request.connection.log, 0,
+                "App internal error: {}".format(
+                    traceback.format_exc()).encode())
+            self.response_complete = True
+            ngx_http_finalize_request(self.request, 
+                NGX_HTTP_INTERNAL_SERVER_ERROR)
+        else:
+            log.error("App internal error: {}".format( 
+                traceback.format_exc()))
+
     cdef start_app(self):
         ngx_log_error(NGX_LOG_DEBUG, self.request.connection.log, 0, 
             b"start asgi app")
-        self.app_coro = self._coro_with_exception_handler(
-            self.app(self.scope, self.receive, self.send))
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.app_coro)
+        try:
+            self.app_coro = self._coro_with_exception_handler(
+                self.app(self.scope, self.receive, self.send))
+            loop = asyncio.get_event_loop()
+            loop.create_task(self.app_coro)
+
+        except:
+            self.finalize_with_exception()
 
     async def receive(self):
         cdef ngx_buf_t *buf
