@@ -26,10 +26,6 @@ static void python_thread_dumy(void *data, ngx_log_t *log);
 static void python_thread_done(ngx_event_t *ev);
 
 
-typedef struct {
-    ngx_str_t python_path;
-} ngx_http_python_main_conf_t;
-
 typedef struct 
 {
     void *task_ptr;
@@ -43,6 +39,13 @@ static ngx_command_t  ngx_python_commands[] = {
         ngx_http_python_path,
         NGX_HTTP_MAIN_CONF_OFFSET,
         0,
+        NULL
+    },
+    { ngx_string("python_executor"),
+        NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_str_slot,
+        NGX_HTTP_MAIN_CONF_OFFSET,
+        offsetof(ngx_http_python_main_conf_t, executor_conf),
         NULL
     },
     { ngx_string("wsgi_pass"),

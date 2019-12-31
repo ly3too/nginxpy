@@ -44,6 +44,7 @@ Features
 * (ongoing) WSGI support by WSGI to ASGI adapting. Run wsgi app in thread pool.
 * (ongoing) fix memory leak and add more test.
 * (TBD) websocket support for asgi and wsgi.
+* (TBD) socket support for event loop
 * (TBD) Python and Cython interface to most NGINX code
 
 Installation
@@ -69,6 +70,8 @@ By example configuration:
         # python_path specifies pathes to search from (PYTHONPATH), before python initinallization. 
         # if not specified, the default PYTHONPATH is used
         python_path "/usr/lib/python3.6:/usr/lib/python3.6/lib-dynload";
+        # currently only support thread pool
+        python_executor "type=thread workers=10"; 
 
         server {
         
@@ -82,8 +85,8 @@ By example configuration:
             }
             
             location /wsgi { 
-                # still ongoing 
-                wsgi_pass wsgi_app:app; 
+                # wsgi application, workers: number of workers in pool; type: thread or process
+                wsgi_pass wsgi_app:wsgi; 
             }
         }
     }
@@ -112,6 +115,14 @@ The asgi_helloworld app:
             "type": "http.response.body", 
             "body": str(scope).encode() 
         })
+
+The wsgi app:
+
+.. code-block:: python
+
+    def wsgi(env, start_response):
+        start_response('200 OK', [('Content-Type','text/plain')])
+        return [b"Hello World\n" + str(env).encode()]
 
 
 Development

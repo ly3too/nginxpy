@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 import io
 import sys
+import logging
 
 # __author__ = 'ly3too@qq.com'
 # __copyright__ = "Copyright 2019, ly3too@qq.com"
@@ -153,3 +154,35 @@ class Wsgi2Asgi:
 
         self.send_queue.append({"type": "http.response.body", "body": b""})
         self.loop.call_soon_threadsafe(self.send_event.set)
+
+class ExecutorFactory:
+    _executors = {}
+
+    @classmethod
+    def get_executor(cls, conf):
+        if not conf:
+            return None
+        if conf in cls._executors:
+            return cls._executors[conf]
+        return cls._create_executor(conf)
+        
+    @classmethod
+    def _create_executor(cls, conf:str):
+        js = dict()
+        kv_strs = conf.split(' ')
+        for kv_str in kv_strs:
+            kvs = kv_str.split('=')
+            assert(len(kvs) == 2)
+            js[kvs[0]] = kvs[1]
+        logging.debug("conf: {}" .format(js))
+        exe_type = js.get('type', 'thread')
+        exe_workers = int(js.get('workers', 10))
+        if exe_type == 'thread':
+            cls._executors[conf] = concurrent.futures.ThreadPoolExecutor(
+                max_workers=exe_workers)
+        elif exe_type == 'process':
+            cls._executors[conf] = concurrent.futures.ProcessPoolExecutor(
+                max_workers=exe_workers)
+        else:
+            raise RuntimeError('Invalid executor type: ' + exe_type)
+        return cls._executors[conf]

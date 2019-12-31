@@ -7,13 +7,15 @@ Try to adapt the nginx request processing phase to python3's event loop.
 from .ngx_http cimport ngx_http_request_t, ngx_http_get_module_loc_conf,\
     ngx_http_finalize_request, NGX_HTTP_INTERNAL_SERVER_ERROR,\
     ngx_http_send_header, ngx_http_output_filter,\
-    ngx_http_read_client_request_body, NGX_HTTP_SPECIAL_RESPONSE
+    ngx_http_read_client_request_body, NGX_HTTP_SPECIAL_RESPONSE,\
+    ngx_http_get_module_main_conf
 from .nginx_core cimport ngx_pool_t, ngx_list_part_t, ngx_table_elt_t,\
     ngx_buf_t, ngx_palloc, ngx_memcpy, ngx_list_push, ngx_create_temp_buf,\
     ngx_cpymem, u_char, ngx_buf_in_memory, NGX_DONE, ngx_uint_t,\
     bytes_from_nginx_str, NGX_LOG_ERR, ngx_pool_cleanup_t, ngx_pool_cleanup_add
 from cpython.bytes cimport PyBytes_FromStringAndSize
-from .asgi.utils import import_by_path, Asgi2ToAsgi3, Wsgi2Asgi
+from .asgi.utils import import_by_path, Asgi2ToAsgi3, Wsgi2Asgi,\
+    ExecutorFactory
 import os
 import asyncio
 from cpython cimport Py_INCREF, Py_DECREF
@@ -49,6 +51,7 @@ cdef get_loc_app(ngx_http_request_t *r):
     """
     get the app from location config
     """
+    cdef ngx_http_python_main_conf_t *pmcf
     cdef ngx_http_python_loc_conf_t *plcf = \
         <ngx_http_python_loc_conf_t *>ngx_http_get_module_loc_conf(r, 
             ngx_python_module)
@@ -56,8 +59,11 @@ cdef get_loc_app(ngx_http_request_t *r):
     app = import_by_path(app_str)
 
     if plcf.is_wsgi:
-        # todo: wsgi to asgi adapter
-        return Wsgi2Asgi(app, None)
+        pmcf = <ngx_http_python_main_conf_t *>ngx_http_get_module_main_conf(r, 
+            ngx_python_module)
+        executor = ExecutorFactory.get_executor(
+            from_nginx_str(pmcf.executor_conf))
+        return Wsgi2Asgi(app, executor)
     
     # asgi2/asgi3
     if plcf.version == 2:

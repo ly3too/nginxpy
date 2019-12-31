@@ -43,6 +43,9 @@ cdef extern from "ngx_http.h":
     
     void *ngx_http_get_module_loc_conf(ngx_http_request_t *r, 
         ngx_module_t module)
+        
+    void *ngx_http_get_module_main_conf(ngx_http_request_t *r, 
+        ngx_module_t module)
 
     void ngx_http_finalize_request(ngx_http_request_t *, ngx_int_t) nogil
 
