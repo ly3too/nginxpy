@@ -19,6 +19,9 @@ cdef extern from "ngx_python_module.h":
         ngx_str_t asgi_pass
         int version
 
+    ctypedef struct ngx_http_python_main_conf_t:
+        ngx_str_t executor_conf
+
     ngx_int_t ngx_python_notify(ngx_event_handler_pt evt_handler)
 
 
@@ -73,4 +76,4 @@ include "log.pyx"
 include "cycle.pyx"
 include "http/http.pyx"
 include "asyncio/loop.pyx"
-include "asyncio/asgi.pyx"
+include "asgi/asgi.pyx"

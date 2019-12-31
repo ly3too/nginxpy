@@ -77,6 +77,9 @@ cdef extern from "ngx_core.h":
         unsigned last_in_chain
         unsigned memory
         unsigned in_file
+        unsigned flush
+        unsigned mmap
+        unsigned temporary
 
     ctypedef struct ngx_chain_t:
         ngx_buf_t    *buf

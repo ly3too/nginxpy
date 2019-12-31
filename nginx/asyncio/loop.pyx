@@ -61,7 +61,6 @@ cdef class Event:
         self._cancled = True
         if self.event.timer_set:
             ngx_event_del_timer(self.event)
-        self.run_post_callbacks()
 
     cdef call_later(self, float delay):
         ngx_add_timer(self.event, int(delay * 1000))
@@ -123,6 +122,8 @@ class NginxEventLoop:
     def call_exception_handler(self, context):
         if self._exception_handler:
             self._exception_handler(context)
+        else:
+            log.error(traceback.format_exc())
 
     def call_soon_threadsafe(self, callback, *args):
         cdef Event event = Event(callback, args, None)

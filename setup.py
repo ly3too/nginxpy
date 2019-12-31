@@ -166,7 +166,7 @@ nginxpy = Extension(
         'nginx/log.pyx',
         'nginx/asyncio/loop.pyx',
         'nginx/http/http.pyx',
-        'nginx/asyncio/asgi.pyx'
+        'nginx/asgi/asgi.pyx'
     ])
 
 setup(
