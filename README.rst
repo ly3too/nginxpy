@@ -44,7 +44,7 @@ Features
 * Write NGINX modules in Python or Cython
 * Python ``logging`` module redirected to NGINX ``error.log``
 * (ongoing) NGINX event loop wrapped as Python ``asyncio`` interface
-* (ongoing) Asgi support. Currently can run some simple app. More works needs to be done to support full featured asgi application.
+* (ongoing) Asgi support. Currently can run some simple app. More works needs to be done to support full featured asgi application. currently file reading is blocking, next step is to implement asynchronious reading in thread pool.
 * (ongoing) WSGI support by WSGI to ASGI adapting. Run wsgi app in thread pool.
 * (ongoing) fix memory leak and add more test.
 * (TBD) websocket support for asgi and wsgi.
