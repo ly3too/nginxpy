@@ -39,7 +39,7 @@ cdef get_headers(ngx_http_request_t *r):
     headers = list()
     while part:
         for i in range(part.nelts):
-            key = bytes_from_nginx_str(h[i].key)
+            key = bytes_from_nginx_str(h[i].key).lower()
             val = bytes_from_nginx_str(h[i].value)
             headers.append([key, val])
 
@@ -242,10 +242,10 @@ cdef class NgxAsgiCtx:
         
         if self.in_chain.buf and self.in_chain.buf:
             buf = self.in_chain.buf
-            body = ""
+            body = b""
             if ngx_buf_in_memory(buf):
                 body = PyBytes_FromStringAndSize(<char*>buf.pos,
-                        buf.last - buf.pos).decode('iso-8859-1')
+                        buf.last - buf.pos)
                 self.in_chain = self.in_chain.next
                 self.file_off = -1
             elif buf.in_file:
