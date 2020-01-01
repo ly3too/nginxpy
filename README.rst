@@ -20,7 +20,11 @@ NGINXpy
 
 
 
-Embed Python in NGINX, supporting ASGI, WSGI
+Embed Python in NGINX, supporting ASGI, WSGI.
+
+Wsgi tested with Django application.
+
+Asgi tested with Starlette application.
 
 forked from https://github.com/decentfox/nginxpy
 
